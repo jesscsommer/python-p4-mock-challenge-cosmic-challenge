@@ -3,7 +3,7 @@
 from models import db, Scientist, Mission, Planet
 from flask_restful import Api, Resource
 from flask_migrate import Migrate
-from flask import Flask, make_response, jsonify, request
+from flask import Flask, make_response, jsonify, request, g
 import os
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -25,6 +25,16 @@ api = Api(app)
 def home():
     return ''
 
+@app.before_request
+def find_scientist_by_id(): 
+    if request.endpoint == "scientistbyid":
+        id_ = request.view_args.get("id")
+        if scientist := db.session.get(Scientist, id_):
+            g.scientist = scientist
+        else:
+            return make_response({"error": "Scientist not found"}, 404)
+
+
 class Scientists(Resource):
     def get(self):
         scientists = [s.to_dict(rules=("-missions",)) for s in Scientist.query.all()]
@@ -41,27 +51,24 @@ class Scientists(Resource):
         
 class ScientistById(Resource):
     def get(self, id): 
-        if scientist := db.session.get(Scientist, id): 
-            return make_response(scientist.to_dict(), 200)
-        return make_response({"error": "Scientist not found"}, 404)
+        scientist = g.get("scientist")
+        return make_response(scientist.to_dict(), 200)
     def patch(self, id): 
-        if scientist := db.session.get(Scientist, id): 
-            try: 
-                data = request.get_json()
-                for k, v in data.items(): 
-                    setattr(scientist, k, v)
-                db.session.add(scientist)
-                db.session.commit()
-                return make_response(scientist.to_dict(rules=("-missions",)), 202)
-            except Exception as e: 
-                return make_response({"errors": str(e)}, 400)
-        return make_response({"error": "Scientist not found"}, 404)
-    def delete(self, id): 
-        if scientist := db.session.get(Scientist, id): 
-            db.session.delete(scientist)
+        scientist = g.get("scientist")
+        try: 
+            data = request.get_json()
+            for k, v in data.items(): 
+                setattr(scientist, k, v)
+            db.session.add(scientist)
             db.session.commit()
-            return make_response({}, 204)
-        return make_response({"error": "Scientist not found"}, 404)
+            return make_response(scientist.to_dict(rules=("-missions",)), 202)
+        except Exception as e: 
+            return make_response({"errors": str(e)}, 400)
+    def delete(self, id): 
+        scientist = g.get("scientist")
+        db.session.delete(scientist)
+        db.session.commit()
+        return make_response({}, 204)
 
 class Planets(Resource):
     def get(self):
